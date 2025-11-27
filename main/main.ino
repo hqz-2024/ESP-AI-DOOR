@@ -63,7 +63,7 @@
 #define PERIOD_MS (1000.0 / SERVO_FREQ)  // PWM周期 = 3ms
 
 #define CLOSEDOOR_DELAY 3000
-#define OPENDOOR_DEWG  30
+#define OPENDOOR_DEWG  33
 #define CLOSEDOOR_DEG  90
 
 
