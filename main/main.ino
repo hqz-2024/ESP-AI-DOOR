@@ -62,6 +62,8 @@
 #define PULSE_MAX 2.5       // 最大脉宽 2.5ms (对应180度)
 #define PERIOD_MS (1000.0 / SERVO_FREQ)  // PWM周期 = 3ms
 
+#define BOOT_PIN 0
+
 #define CLOSEDOOR_DELAY 3000
 #define OPENDOOR_DEWG  33
 #define CLOSEDOOR_DEG  90
@@ -163,12 +165,14 @@ void setup() {
   // ========================================
   // 配置LEDC (LED Control) 用于生成PWM信号
   ledcSetup(SERVO_CHANNEL, SERVO_FREQ, SERVO_RESOLUTION);
+  
   // 将LEDC通道绑定到舵机引脚
   ledcAttachPin(SERVO_PIN, SERVO_CHANNEL);
   // 初始化舵机到0度位置（关门状态）
   servoWrite(CLOSEDOOR_DEG);
   Serial.println("舵机初始化完成 (0度关门位置)");
 
+  pinMode(BOOT_PIN, INPUT);
   // ========================================
   // 2. 初始化SPI总线
   // ========================================
@@ -228,20 +232,54 @@ void setup() {
  * ========================================
  * 函数: loop
  * ========================================
- * 功能: 主循环函数，持续检测NFC卡片并控制门禁
+ * 功能: 主循环函数，持续检测NFC卡片、BOOT按键并控制门禁
  *
- * 新的工作逻辑:
- *   1. 持续检测授权卡片是否在读取区
- *   2. 卡片在读取区时，保持门开启 (90度)，不开始倒计时
- *   3. 检测到卡片离开时，记录离开时间，开始倒计时
- *   4. 卡片离开后10秒内如果再次靠近，取消倒计时
- *   5. 卡片离开10秒后，自动关门 (0度)
+ * 工作逻辑:
+ *   1. 检测BOOT按键，按下时开门并启动延迟关门倒计时
+ *   2. 持续检测授权卡片是否在读取区
+ *   3. 卡片在读取区时，保持门开启，不开始倒计时
+ *   4. 检测到卡片离开时，记录离开时间，开始倒计时
+ *   5. 卡片离开后指定时间内如果再次靠近，取消倒计时
+ *   6. 卡片离开或按键触发后，超过延迟时间自动关门
  */
 void loop() {
   bool currentCardDetected = false;  // 本次循环是否检测到授权卡片
 
   // ========================================
-  // 1. 尝试读取卡片 (不使用Halt，保持持续检测)
+  // 1. 检测BOOT按键
+  // ========================================
+  if (digitalRead(BOOT_PIN) == LOW) {
+    // 按键被按下（BOOT键按下时为LOW）
+    delay(50);  // 消抖延迟
+
+    if (digitalRead(BOOT_PIN) == LOW) {
+      // 确认按键按下
+      if (!doorOpen) {
+        Serial.println("\n========================================");
+        Serial.println(F("检测到BOOT按键按下！"));
+        Serial.println(F("正在开门..."));
+
+        // 控制舵机开门
+        servoWrite(OPENDOOR_DEWG);
+        doorOpen = true;
+        cardPresent = false;  // 标记为非卡片触发
+        cardLeftTime = millis();  // 记录开门时间
+
+        Serial.println(F("门已打开"));
+        Serial.print(DOOR_DELAY / 1000);
+        Serial.println(F("秒后自动关门"));
+        Serial.println(F("========================================\n"));
+      }
+
+      // 等待按键释放
+      while (digitalRead(BOOT_PIN) == LOW) {
+        delay(10);
+      }
+    }
+  }
+
+  // ========================================
+  // 2. 尝试读取卡片 (不使用Halt，保持持续检测)
   // ========================================
   // 关键：不调用PICC_HaltA()，这样卡片会保持激活状态
   // 可以持续被检测到
@@ -349,10 +387,12 @@ void loop() {
   // ========================================
   // 6. 检查是否需要关门
   // ========================================
-  // 条件：门是打开状态 && 卡片已离开 && 离开时间超过10秒
+  // 条件：门是打开状态 && 卡片已离开 && 离开时间超过延迟时间
   if (doorOpen && !cardPresent && (millis() - cardLeftTime > DOOR_DELAY)) {
     Serial.println("\n========================================");
-    Serial.println(F("卡片离开已超过10秒"));
+    Serial.print(F("已超过 "));
+    Serial.print(DOOR_DELAY / 1000);
+    Serial.println(F(" 秒"));
     Serial.println(F("正在关门..."));
 
     // 控制舵机关门 (回到0度)
