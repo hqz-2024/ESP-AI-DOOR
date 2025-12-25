@@ -172,7 +172,7 @@ void setup() {
   servoWrite(CLOSEDOOR_DEG);
   Serial.println("舵机初始化完成 (0度关门位置)");
 
-  pinMode(BOOT_PIN, INPUT);
+  pinMode(BOOT_PIN, INPUT_PULLUP);
   // ========================================
   // 2. 初始化SPI总线
   // ========================================
